@@ -29,8 +29,8 @@ FRAMES_DIR_NAME = 'frames'
 CHANNEL_ID_KEY = 'channel_id'
 SECOND_CHANNEL_ID_KEY = 'channel_id2'
 NSFW_SCORE_KEY = 'nsfw_score'
-NSFW_THRESHOLD = 0.5
-CHNL_THRESHOLD = 0.55
+NSFW_THRESHOLD = 0.6
+CHNL_THRESHOLD = 0.6
 NSFW_GPU_MEMORY = 0.4
 CHNL_GPU_MEMORY = 0.4
 UNDEFINED = -1
@@ -120,9 +120,9 @@ class LogoDetector():
 
 		# Expand dimensions since the trained_model expects frames to have shape: [1, None, None, 3]
 		im_height, im_width, _ = frame.shape
-		rect_img = np.ones((im_height,im_width),frame.dtype)
-		rect_img   = cv2.rectangle(rect_img, (int(im_width/4), int(im_height/4)), (int(3*im_width/4), int(3*im_height/4)), 0, thickness=-1)
-		frame = cv2.bitwise_and(frame, frame, mask=rect_img)
+		# rect_img = np.ones((im_height,im_width),frame.dtype)
+		# rect_img   = cv2.rectangle(rect_img, (int(im_width/4), int(im_height/4)), (int(3*im_width/4), int(3*im_height/4)), 0, thickness=-1)
+		# frame = cv2.bitwise_and(frame, frame, mask=rect_img)
 		
 		frame_np_expanded = np.expand_dims(frame, axis=0)
 
@@ -148,7 +148,7 @@ class LogoDetector():
 		ret_classes = []
 		ret_labels = []
 		for i in range(len(all_boxes)):
-			if all_classes[i] in self.classes_to_detect and all_scores[i] > self.confidence_level:
+			if all_classes[i] in self.classes_to_detect and all_scores[i] >= self.confidence_level:
 				ret_boxes.append(all_boxes[i])
 				ret_scores.append(all_scores[i])
 				ret_classes.append(all_classes[i])
@@ -265,22 +265,27 @@ class VideoCapture(QWidget):
 		self.actual_channel_id = UNKNOWN_CHANNEL_ID
 		self.actual_channel_id2 = UNKNOWN_CHANNEL_ID
 		self.previous_channel_id = UNKNOWN_CHANNEL_ID
+		self.previous_channel_id2 = UNKNOWN_CHANNEL_ID
 		self.is_porn_detected = False
 		self.scores = None
 		self.result_dict = None
 		self.thread_porn = None
 		self.gc_thread = None
+		self.isTwoChannels = False
 
 	def process_frame(self, frame):
 		result_dict = {}
 		try:
 			boxes, scores_logos, classes, labels = self.logo_detector.process(frame)
+
 			print('Detector:', classes, scores_logos)
+			
 			max_score, max_i = 0, UNDEFINED
 			for i in range(len(scores_logos)):
 				if scores_logos[i] > max_score:
 					max_score = scores_logos[i]
 					max_i = i
+
 			max_score2, max_i2 = 0, UNDEFINED
 			
 				
@@ -332,7 +337,7 @@ class VideoCapture(QWidget):
 		self.buffer_nsfw.append(result_dict[NSFW_SCORE_KEY])
 		if len(self.buffer_channel) >= self.buffer_size:
 			self.nsfw_decision = "Безопасно"
-			self.tv_decision     = "ТВ"
+			#self.tv_decision     = "ТВ"
 
 			# находим среднюю вероятность nsfw-контента
 			nsfw_score = 1.0 * sum(self.buffer_nsfw) / len(self.buffer_nsfw)
@@ -350,7 +355,7 @@ class VideoCapture(QWidget):
 			# находим канал, который попался наибольшее число раз
 			max_value = 0
 			result_channel_id = UNKNOWN_CHANNEL_ID
-			print(channels_dict)
+			print("channels_dict == ", channels_dict)
 			for k in channels_dict:
 				v = channels_dict[k]
 				if v[0] > max_value:
@@ -378,7 +383,7 @@ class VideoCapture(QWidget):
 			# находим канал, который попался наибольшее число раз
 			max_value2 = 0
 			result_channel_id2 = UNKNOWN_CHANNEL_ID
-			print(channels_dict2)
+			print("channels_dict2 == ", channels_dict2)
 			for k in channels_dict2:
 				v = channels_dict2[k]
 				if v[0] > max_value2:
@@ -398,38 +403,55 @@ class VideoCapture(QWidget):
 				self.logTextBox.widget.append("Канал не распознан")
 				self.logTextBox.widget.setTextColor(QColor(0,0,0))
 			el"""
-			if result_channel_id != self.actual_channel_id:
+			print("result_channel_id2 == ",result_channel_id2)
+
+			if result_channel_id2 != UNDEFINED and result_channel_id2 != UNKNOWN_CHANNEL_ID:
+				#self.previous_channel_id2 = self.actual_channel_id2
+				#self.actual_channel_id2 = result_channel_id2
+				self.logTextBox.widget.setTextColor(QColor(255,0,0))
+				self.logTextBox.widget.append("Внимание! Задетектировано несколько лого каналов!")
+				self.logTextBox.widget.setTextColor(QColor(0,0,0))
+				self.isTwoChannels = True
+
+			elif result_channel_id != self.actual_channel_id:
 				self.previous_channel_id = self.actual_channel_id
 				self.actual_channel_id = result_channel_id
 				self.logTextBox.widget.setTextColor(QColor(255,0,0))
 				self.logTextBox.widget.append("Изменился канал с {} на {}".format(self.logo_detector.get_label(self.previous_channel_id), self.logo_detector.get_label(self.actual_channel_id)))
 				self.logTextBox.widget.setTextColor(QColor(0,0,0))
+				self.isTwoChannels = False
 
-			if result_channel_id2 != self.actual_channel_id2:
-				self.previous_channel_id2 = self.actual_channel_id2
-				self.actual_channel_id2 = result_channel_id2
-				self.logTextBox.widget.setTextColor(QColor(255,0,0))
-				self.logTextBox.widget.append("Внимание! Задетектировано два лого каналов!")
-				self.logTextBox.widget.setTextColor(QColor(0,0,0))
+			#if result_channel_id2 == UNKNOWN_CHANNEL_ID:
+			print("ISTWOCHANNELS === ", self.isTwoChannels)
+				
+
+			
 
 			if result_nsfw != self.is_porn_detected:
 				if result_nsfw:
 					self.logTextBox.widget.setTextColor(QColor(255,0,0))
-					self.logTextBox.widget.append("Обнаружение порно контента")
+					self.logTextBox.widget.append("Обнаружение порно контента - {}".format(int(nsfw_score * 100)))
 					self.logTextBox.widget.setTextColor(QColor(0,0,0))
 					self.is_porn_detected = True
 					self.content_value_label.setText("<font color='red'>Небезопасно</font>")
 					self.tv_decision = "Порно"
 				else:
 					self.logTextBox.widget.setTextColor(QColor(76,153,0))
-					self.logTextBox.widget.append("Возвращение к нормальному контенту")
+					self.logTextBox.widget.append("Возвращение к нормальному контенту - {}".format(int(nsfw_score * 100)))
 					self.logTextBox.widget.setTextColor(QColor(0,0,0))
 					self.is_porn_detected = False
 					self.content_value_label.setText("<font color='green'>Безопасно</font>")
 					self.tv_decision = "ТВ"
-
-			self.channel_value_label.setText('{:25}'.format(self.logo_detector.get_label(self.actual_channel_id) +\
+			# Если два канала 
+			if self.isTwoChannels:
+				self.channel_value_label.setText("<font color='red'> два лого</font>" + ' ' + self.tv_decision)
+				channel_confidence = channel_confidence2
+			# Если все нормально и один канал
+			else:
+				print("self.tv_decision ===", self.tv_decision)
+				self.channel_value_label.setText('{:25}'.format(self.logo_detector.get_label(self.actual_channel_id) +\
 					' ' + self.tv_decision))
+				self.isTwoChannels = False
 			self.channel_conf_label.setText('{:>5}%'.format(int(channel_confidence * 100)))
 			self.content_conf_label.setText('{:>5}%'.format(int(nsfw_score * 100)))
 			
@@ -441,6 +463,7 @@ class VideoCapture(QWidget):
 
 			self.buffer_nsfw = []
 			self.buffer_channel = []
+			self.buffer_channel2 = []
 			
 
 
